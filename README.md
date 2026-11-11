@@ -11,7 +11,7 @@ Core algorithms and PyTorch backbones extracted from the research project. The o
 | `rsmn/backbones.py` | EEGNet, ShallowConvNet, DeepConvNet, EEG Conformer |
 | `rsmn/source_reliability.py` | Inter-class separability, intra-class dispersion, session drift, and source reliability |
 | `rsmn/source_selection.py` | Patient-specific source matching and Top-K selection |
-| `rsmn/adaptive_cpra.py` | Adaptive class-conditional partial Riemannian alignment (CPRA) |
+| `rsmn/adaptive_cpra.py` | Adaptive class-conditional partial Riemannian alignment (cPRA) |
 | `rsmn/tcpa.py` | TCPA: patient-anchored BN, class prototypes, dimension-normalized loss, and a unified forward interface |
 | `rsmn/rame.py` | Hemisphere mirroring, reliability estimation, mirror cross-entropy, consistency regularization, and probability fusion (RAME) |
 | `rsmn/riemannian.py` | SPD matrix operations, AIRM distance, Riemannian means, and geodesic interpolation |
@@ -91,7 +91,7 @@ When session information is available for a source, pass `session_ids` to `Subje
 In the paper, **TCPA (Target-Class Prototype Alignment)** combines patient-anchored BN with prototype alignment. `tcpa_forward` first processes the original patient batch and the optional augmented patient batch, followed by each source batch; source passes use their own batch means and variances and the shared affine parameters, but do not update BN running statistics. Prototypes are computed from the original patient features and the corresponding source features in the current batch, and gradients are retained for both domains.
 
 ```python
-from rsmn import CoreConfig, tcpa_forward
+from rsmn import CoreConfig, tcpa_forward, build_backbone
 
 config = CoreConfig(TCPA_WEIGHT=0.10)
 model = build_backbone("eegnet", n_channels=29, n_times=1024)
@@ -114,5 +114,5 @@ This is a single differentiable forward operation without a training loop or opt
 
 The prototype distance explicitly uses `reduction="sum"` inside the module and is then divided by the actual feature dimension `d`, which is equivalent to the original default mean reduction in MSE. `output.loss` already includes `1/d` once; during training, multiply it directly by `config.TCPA_WEIGHT` without dividing by `d` again outside the module. Coefficient values do not need conversion. This document uses the original paper's loss definition with `1/(d × number of valid classes)`.
 
-RAME uses `rame_losses(...)`, which returns `(weighted_loss, mirror_ce, mirror_js)`; binary mirrored labels are `1 - y`. Mirroring is performed after standardization using patient statistics, without further standardization, and mirrored passes also leave BN running statistics unchanged. `mirrored_logits` should come from a forward pass on mirrored inputs with `model.eval()` enabled. The BN protection utility `frozen_bn_running_stats` is shared by TCPA and RAME.
+RAME uses `rame_losses(...)`, which returns `(weighted_loss, mirror_ce, mirror_js)`; binary mirrored labels are `1 - y`. Mirroring is performed after standardization using patient statistics, without further standardization, and mirrored passes also leave BN running statistics unchanged. During training, mirrored forward passes use batch statistics without updating BN running statistics. During inference, mirrored logits are obtained with `model.eval()` enabled for reliability-weighted probability fusion. The BN protection utility `frozen_bn_running_stats` is shared by TCPA and RAME.
 
